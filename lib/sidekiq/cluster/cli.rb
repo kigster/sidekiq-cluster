@@ -196,26 +196,25 @@ module Sidekiq
       end
 
       def replace_pid(old_pid, new_pid)
-        if processes[old_pid]
-          pd       = processes[old_pid]
-          pid_file = pid_file(pd.index)
+        pd       = processes[old_pid]
+        pid_file = pid_file(pd.index)
 
-          ::File.unlink(pid_file) if ::File.exist?(pidfile)
-          pids.delete(old_pid)
-          pd.pid = new_pid
+        ::File.unlink(pid_file) if ::File.exist?(pidfile)
+        pids.delete(old_pid)
+        processes.delete(old_pid)
 
-          processes.delete(pid)
-          processes[new_pid] = pd
-        end
+        pd.pid = new_pid
+        processes[new_pid] = pd
       end
 
       def restart_dead_child(pid)
         info "pid=#{pid} died, restarting..."
 
-        pd      = processes[pid]
+        pd = processes[pid]
+        raise ArgumentError, "Unregistered pid found #{pid}, no existing descriptor found!" unless pd
         new_pid = fork_child(pd.index)
-
         replace_pid(pid, new_pid)
+
         info "replaced lost pid #{pid} with #{new_pid}"
       end
 
