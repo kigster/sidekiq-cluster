@@ -1,43 +1,35 @@
-# encoding: utf-8
-
-require 'rubygems'
-require 'bundler'
-begin
-  Bundler.setup(:default, :development)
-rescue Bundler::BundlerError => e
-  $stderr.puts e.message
-  $stderr.puts "Run `bundle install` to install missing gems"
-  exit e.status_code
-end
-require 'rake'
-
-require 'jeweler'
-Jeweler::Tasks.new do |gem|
-  # gem is a Gem::Specification... see http://guides.rubygems.org/specification-reference/ for more options
-  gem.name = "sidekiq-cluster"
-  gem.homepage = "http://github.com/kigster/sidekiq-cluster"
-  gem.license = "MIT"
-  gem.summary = %Q{Sidekiq Cluster — start more than one sidekiq}
-  gem.description = %Q{TODO: longer description of your gem}
-  gem.email = "kigster@gmail.com"
-  gem.authors = ["Konstantin Gredeskoul"]
-  # dependencies defined in Gemfile
-end
-Jeweler::RubygemsDotOrgTasks.new
-
-require 'rspec/core'
+require 'bundler/gem_tasks'
 require 'rspec/core/rake_task'
-RSpec::Core::RakeTask.new(:spec) do |spec|
-  spec.pattern = FileList['spec/**/*_spec.rb']
+require 'yard'
+
+def shell(*args)
+  puts "running: #{args.join(' ')}"
+  system(args.join(' '))
 end
 
-desc "Code coverage detail"
-task :simplecov do
-  ENV['COVERAGE'] = "true"
-  Rake::Task['spec'].execute
+task :clean do 
+  shell('rm -rf pkg/ tmp/ coverage/ doc/ s' )
 end
+
+task :gem => [:build] do
+  shell('gem install pkg/*')
+end
+
+task :permissions => [ :clean ] do 
+  shell("chmod -v o+r,g+r * */* */*/* */*/*/* */*/*/*/* */*/*/*/*/*")
+  shell("find . -type d -exec chmod o+x,g+x {} \\;")
+end
+
+task :build => :permissions
+
+YARD::Rake::YardocTask.new(:doc) do |t|
+  t.files = %w(lib/**/*.rb exe/*.rb - README.md LICENSE.txt)
+  t.options.unshift('--title','Sidekiq Cluster — The Missing Multi-Process Sidekiq Manager')
+  t.after = ->() { exec('open doc/index.html') }
+end
+
+RSpec::Core::RakeTask.new(:spec)
 
 task :default => :spec
 
-require 'yard'
-YARD::Rake::YardocTask.new
+
