@@ -1,23 +1,7 @@
 require 'simplecov'
 require 'rspec'
 require 'rspec/its'
-
-module SimpleCov::Configuration
-  def clean_filters
-    @filters = []
-  end
-end
-
-SimpleCov.configure do
-  clean_filters
-  load_adapter 'test_frameworks'
-end
-
-ENV["COVERAGE"] && SimpleCov.start do
-  add_filter "/.rvm/"
-end
-$LOAD_PATH.unshift(File.join(File.dirname(__FILE__), '..', 'lib'))
-$LOAD_PATH.unshift(File.dirname(__FILE__))
+SimpleCov.start
 
 require 'rspec'
 require 'sidekiq/cluster'
@@ -27,5 +11,5 @@ require 'sidekiq/cluster'
 Dir["#{File.dirname(__FILE__)}/support/**/*.rb"].each {|f| require f}
 
 RSpec.configure do |config|
-
+  config.expect_with(:rspec) { |c| c.syntax = :should }
 end

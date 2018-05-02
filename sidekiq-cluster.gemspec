@@ -4,10 +4,6 @@ lib = File.expand_path('../lib', __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 require 'sidekiq/cluster/version'
 
-Sidekiq::Cluster::DESCRIPTION = <<-eof
-  This library provides CLI interface for starting multiple copies of Sidekiq in parallel, typically to take advantage of multi-core systems.  By default it starts N - 1 processes, where N is the number of cores on the current system. Sidekiq Cluster is controlled with CLI flags that appear before `--` (double dash), while any arguments that follow double dash are passed to each Sidekiq process. The exception is the `-P pidfile`, which clustering script passes to each sidekiq process individually.
-eof
-
 Gem::Specification.new do |spec|
   spec.name          = 'sidekiq-cluster'
   spec.version       = Sidekiq::Cluster::VERSION
@@ -28,6 +24,8 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency 'colored2' 
   spec.add_dependency 'sidekiq' 
+  spec.add_dependency 'dry-configurable'
+  spec.add_dependency 'state_machines'
 
   spec.add_development_dependency 'rspec', '~> 3.5.0'
   spec.add_development_dependency 'rspec-its'

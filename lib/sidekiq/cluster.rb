@@ -1,4 +1,4 @@
-require 'sidekiq/cluster/version'
+require_relative 'cluster/version'
 
 module Sidekiq
   module Cluster
@@ -6,4 +6,7 @@ module Sidekiq
 end
 
 require_relative 'cluster/cli'
+require_relative 'cluster/config'
+require_relative 'cluster/memory'
+require_relative 'cluster/stdlib_ext'
 

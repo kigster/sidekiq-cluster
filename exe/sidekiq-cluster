@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 
 require_relative '../lib/sidekiq/cluster/cli'
-Sidekiq::Cluster::CLI.new(ARGV).run!
+Sidekiq::Cluster::CLI.new(ARGV).execute!
 
 

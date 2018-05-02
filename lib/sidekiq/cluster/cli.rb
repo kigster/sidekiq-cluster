@@ -3,273 +3,193 @@ require 'etc'
 require 'optparse'
 require 'logger'
 require 'colored2'
+require 'pp'
+
+require_relative 'config'
+require_relative 'worker_pool'
+require_relative 'version'
 
 module Sidekiq
   module Cluster
-    MAX_RAM_PCT = 80
-
-    ProcessDescriptor = Struct.new(:pid, :index, :pidfile)
-
     class CLI
-      attr_accessor :name,
-                    :pid_prefix,
-                    :argv,
-                    :sidekiq_argv,
-                    :process_count,
-                    :pids,
-                    :processes,
-                    :watch_children,
-                    :memory_percentage_limit,
-                    :log_device,
-                    :logger
+      attr_accessor :argv, :config, :logger, :log_device, :worker_pool, :master_pid
+      attr_reader :stdout, :stdin, :stderr, :kernel
 
-      def initialize(argv = ARGV.dup)
-        self.argv                    = argv
-        self.name                    = 'default'
-        self.pid_prefix              = '/tmp/sidekiq.pid'
-        self.sidekiq_argv            = []
-        self.log_device              = STDOUT
-        self.memory_percentage_limit = MAX_RAM_PCT
-        self.process_count           = Etc.nprocessors - 1
-        self.processes               = {}
-        self.pids                    = []
+      class << self
+        attr_accessor :instance
       end
 
-      def per_process_memory_limit
-        memory_percentage_limit.to_f / process_count.to_f
+      def initialize(argv, stdin = STDIN, stdout = STDOUT, stderr = STDERR, kernel = Kernel)
+        @argv, @stdin, @stdout, @stderr, @kernel = argv, stdin, stdout, stderr, kernel
+        args                                     = argv.dup
+        args                                     = %w(--help) if args.nil? || args.empty?
+        self.master_pid                          = Process.pid
+        self.config                              = Config.config
+        Config.split_argv(args.dup)
+        self.class.instance = self
       end
 
-      def run!
-        initialize_cli_arguments!
-        print_header!
-        start_main_loop!
-      end
+      def execute!
+        parse_cli_arguments
+        print_header
+        pp config.to_h if config.debug
 
-      def start_main_loop!
-        start_children.each do |descriptor|
-          processes[descriptor.pid] = descriptor
+        ::Process.setproctitle('sidekiq-cluster.' + config.name + ' ' + config.cluster_argv.join(' '))
+
+        if config.work_dir
+          if Dir.exist?(config.work_dir)
+            Dir.chdir(config.work_dir)
+          else
+            raise "Can not find work dir #{config.work_dir}"
+          end
         end
 
-        self.pids           = processes.keys
-        self.watch_children = true
+        config.logfile    = Dir.pwd + '/' + config.logfile if config.logfile && !config.logfile.start_with?('/')
+        config.pid_prefix = Dir.pwd + '/' + config.pid_prefix if config.pid_prefix && !config.pid_prefix.start_with?('/')
 
-        main
-        setup_signal_traps
+        init_logger
 
-        Process.waitall
-        info 'shutting down...'
+        boot
+      end
+
+      def boot
+        @worker_pool = ::Sidekiq::Cluster::WorkerPool.new(self, config)
+        @worker_pool.spawn
       end
 
       def print(*args)
-        puts(*args)
+        unless config.quiet
+          stdout.puts args.join(' ')
+        end
       end
 
       def stop!(code = 0)
-        Kernel.exit(code)
+        if worker_pool
+          unless worker_pool.stopped?
+            worker_pool.stop!
+            sleep 5
+          end
+        end
+
+        kernel.exit(code)
       end
 
-      def initialize_cli_arguments!
-        if argv.nil? || argv.empty?
-          argv << '-h'
-        else
-          split_argv! if argv.include?('--')
+      def close_logger
+        self.logger.close if logger && logger.respond_to?(:close)
+        if Process.pid != master_pid
+          log_device.close if log_device && log_device.respond_to?(:close)
         end
-        init_logger!
-        parse_args!
+      rescue
+        nil
+      end
+
+      def init_logger
+        if config.logfile
+          ::FileUtils.mkdir_p(::File.dirname(config.logfile))
+          self.log_device = ::File.open(config.logfile, 'a', 0644)
+        else
+          self.log_device = stdout
+        end
+
+        log_device.sync = true
+
+        @logger = ::Logger.new(log_device, level: ::Logger::INFO)
+        info('opening log file: ' + (config.logfile ? config.logfile.to_s : 'STDOUT'))
+      end
+
+      def print_header
+        print "Sidekiq Cluster v#{Sidekiq::Cluster::VERSION} — Starting up, Cluster name: [#{config.name}]"
+        print "  • max memory limit is  : #{config.max_memory_percent.round(2)}%"
+        print "  • memory strategy      : #{config.memory_strategy.to_s.capitalize}"
+        print "  • number of workers is : #{config.process_count}"
+        print "  • logfile              : #{config.logfile}" if config.logfile
+        print "  • pid file path        : #{config.pid_prefix}" if config.pid_prefix
+      end
+
+      def prefix
+        Process.pid == master_pid ? ' «master» '.bold.blue : ' «worker» '.bold.green
+      end
+
+      def info(*args)
+        logger.info(prefix + args.join(' '))
+      end
+
+      def error(*args, exception: nil)
+        logger.error(prefix + "exception: #{exception.message}") if exception
+        logger.error(prefix + args.join(' '))
       end
 
       private
 
-      def print_header!
-        info "starting up sidekiq-cluster for #{name}"
-        info "NOTE: cluster max memory limit is #{memory_percentage_limit.round(2)}% of total"
-        info "NOTE: per sidekiq memory limit is #{per_process_memory_limit.round(2)}% of total"
-      end
-
-      def init_logger!
-        self.logger = ::Logger.new(log_device, level: ::Logger::INFO)
-      end
-
-      def split_argv!
-        self.sidekiq_argv = argv[(argv.index('--') + 1)..-1]
-        self.argv         = argv[0..(argv.index('--') - 1)]
-      end
-
-      def setup_signal_traps
-        %w(INT USR1 TERM).each do |sig|
-          Signal.trap(sig) do
-            handle_sig(sig)
+      def parse_cli_arguments
+        banner = 'USAGE'.bold.yellow + "\n    sidekiq-cluster [options] -- ".bold.magenta + "[sidekiq-options]".bold.cyan
+        parser = ::OptionParser.new(banner, 26, indent = ' ' * 3) do |opts|
+          opts.separator ::Sidekiq::Cluster::BANNER
+          opts.on('-n', '--name NAME',
+                  'the name of this cluster, used when running ',
+                  'multiple clusters.', ' ') do |v|
+            config.name = v
           end
-        end
-      end
-
-      def main
-        Thread.new do
-          info 'watching for outsized Sidekiq processes...'
-          loop do
-            sleep 10
-            check_pids
-            break unless @watch_children
+          opts.on('-N', '--num-processes NUM',
+                  'Number of worker processes to use for this cluster,',
+                  'defaults to the number of cores - 1', ' ') do |v|
+            config.process_count = v.to_i
           end
-          info 'leaving the main loop..'
-        end
-      end
 
-      def info(*args)
-        @logger.info(*args)
-      end
-
-      def error(*args, exception: nil)
-        @logger.error("exception: #{exception.message}") if exception
-        @logger.error(*args)
-      end
-
-      def handle_sig(sig)
-        print "received OS signal #{sig}"
-        # If we're shutting down, we don't need to re-spawn child processes that die
-        @watch_children = false if sig == 'INT' || sig == 'TERM'
-        @pids.each do |pid|
-          Process.kill(sig, pid)
-        end
-      end
-
-      def fork_child(index)
-        require 'sidekiq'
-        require 'sidekiq/cli'
-
-        Process.fork do
-          process_argv = sidekiq_argv.dup << '-P' << pid_file(index)
-          process_argv << '--tag' << "sidekiq.#{name}.#{index + 1}"
-          info "starting up sidekiq instance #{index} with ARGV: 'bundle exec sidekiq #{process_argv.join(' ')}'"
-          begin
-            cli = Sidekiq::CLI.instance
-            cli.parse process_argv
-            cli.run
-          rescue => e
-            raise e if $DEBUG
-            error e.message
-            error e.backtrace.join("\n")
-            stop!(1)
-          end
-        end
-      end
-
-      def pid_file(index)
-        "#{pid_prefix}.#{index + 1}"
-      end
-
-      def start_children
-        Array.new(process_count) do |index|
-          pid = fork_child(index)
-          ProcessDescriptor.new(pid, index, pid_file(index))
-        end
-      end
-
-      def check_pids
-        print_info         = false
-        @last_info_printed ||= Time.now.to_i
-        if Time.now.to_i - @last_info_printed > 60
-          @last_info_printed = Time.now.to_i
-          print_info         = true
-        end
-
-        pids.each do |pid|
-          memory_percent_used = `ps -o %mem= -p #{pid}`.to_f
-          info "sidekiq.#{name % '%15s'}[#{processes[pid].index}] —— pid=#{pid.to_s % '%6d'} —— memory pct=#{memory_percent_used.round(2)}%" if print_info
-          if memory_percent_used == 0.0 # child died
-            restart_dead_child(pid)
-          elsif memory_percent_used > per_process_memory_limit
-            info "pid #{pid} crossed memory threshold, used #{memory_percent_used.round(2)}% of RAM, exceeded #{per_process_memory_limit}% —> replacing..."
-            restart_oversized_child(pid)
-          elsif $DEBUG
-            info "#{pid}: #{memory_percent_used.round(2)}"
-          end
-        end
-      end
-
-      def restart_oversized_child(pid)
-        @pids.delete(pid)
-        Process.kill('USR1', pid)
-        sleep 5
-        Process.kill('TERM', pid)
-        @pids << fork_child
-      end
-
-      def replace_pid(old_pid, new_pid)
-        pd       = processes[old_pid]
-        pid_file = pid_file(pd.index)
-
-        ::File.unlink(pid_file) if ::File.exist?(pidfile)
-        pids.delete(old_pid)
-        processes.delete(old_pid)
-
-        pd.pid = new_pid
-        processes[new_pid] = pd
-      end
-
-      def restart_dead_child(pid)
-        info "pid=#{pid} died, restarting..."
-
-        pd = processes[pid]
-        raise ArgumentError, "Unregistered pid found #{pid}, no existing descriptor found!" unless pd
-        new_pid = fork_child(pd.index)
-        replace_pid(pid, new_pid)
-
-        info "replaced lost pid #{pid} with #{new_pid}"
-      end
-
-      def parse_args!
-        options = {}
-        banner  = "USAGE".bold.blue + "\n     sidekiq-cluster [options] -- [sidekiq-options]".bold.green
-        parser  = ::OptionParser.new(banner) do |opts|
-          opts.separator ''
-          opts.separator 'EXAMPLES'.bold.blue
-          opts.separator '    $ cd rails_app'.bold.magenta
-          opts.separator '    $ bundle exec sidekiq-cluster -N 2 -- -c 10 -q default,12 -l log/sidekiq.log'.bold.magenta
-          opts.separator ' '
-          opts.separator 'SIDEKIQ CLUSTER OPTIONS'.bold.blue
-
-          opts.on('-n', '--name=NAME',
-                  'the name of this cluster, used when ',
-                  'when running multiple clusters', ' ') do |v|
-            self.name = v
-          end
-          opts.on('-P', '--pidfile=FILE',
-                  'Pidfile prefix, ',
-                  'eg "/var/www/shared/config/sidekiq.pid"', ' ') do |v|
-            self.pid_prefix = v
-          end
-          opts.on('-L', '--logfile=FILE',
-                  'Logfile for the cluster script', ' ') do |v|
-            self.log_device = v
-            init_logger!
-          end
-          opts.on('-M', '--max-memory=PERCENT',
-                  'Maximum percent RAM that this',
+          opts.on('-M', '--max-memory PCT',
+                  'Float, the maximum percent total RAM that this',
                   'cluster should not exceed. Defaults to ' +
                       Sidekiq::Cluster::MAX_RAM_PCT.to_s + '%.', ' ') do |v|
-            self.memory_percentage_limit = v.to_f
+            config.max_memory_percent = v.to_f
           end
-          opts.on('-N', '--num-processes=NUM',
-                  'Number of processes to start,',
-                  'defaults to number of cores - 1', ' ') do |v|
-            self.process_count = v.to_i
+
+          opts.on('-m', '--memory-mode MODE',
+                  'Either "total" (default) or "individual".', ' ',
+                  '• In the "total" mode the largest worker is restarted if ',
+                  '  the sum of all workers exceeds the memory limit. ',
+                  '• In the "individual" mode, a worker is restarted if it ',
+                  '  exceeds MaxMemory / NumWorkers.', ' ') do |v|
+            if Config::MEMORY_STRATEGIES.include?(v.downcase.to_sym)
+              config.memory_strategy = v.downcase.to_sym
+            else
+              raise "Invalid strategy '#{v}'. Valid strategies are :#{Config::MEMORY_STRATEGIES.join(', ')}"
+            end
           end
+
+          opts.on('-P', '--pid-prefix PATH',
+                  'Pidfile prefix path used to generate pid files, ',
+                  'eg "/var/tmp/cluster.pid"', ' ') do |v|
+            config.pid_prefix = v
+          end
+
+          opts.on('-L', '--logfile FILE',
+                  'The logfile for sidekiq cluster itself', ' ') do |v|
+            config.logfile = v
+          end
+
+          opts.on('-w', '--work-dir DIR',
+                  'Directory where to run', ' ') do |v|
+            config.work_dir = v
+          end
+
           opts.on('-q', '--quiet',
-                  'Do not log to STDOUT') do |v|
-            self.logger = Logger.new(nil)
+                  'Do not print anything to STDOUT') do |_v|
+            config.quiet = true
           end
+
           opts.on('-d', '--debug',
-                  'Print debugging info before starting sidekiqs') do |_v|
-            options[:debug] = true
+                  'Print debugging info before starting workers') do |_v|
+            config.debug = true
           end
+
           opts.on('-h', '--help', 'this help') do |_v|
-            self.print opts
+            config.help = true
+            stdout.puts opts
             stop!
           end
         end
-        parser.order!(argv)
-        print("debug: #{self.inspect}") if options[:debug]
+
+        parser.order!(argv.dup)
       end
     end
   end

@@ -4,26 +4,31 @@ module Sidekiq
   module Cluster
     RSpec.describe CLI do
       let(:argv) { [] }
-      subject(:cli) { described_class.new(argv) }
+      let(:cli) {  described_class.new(argv) }
+      subject(:config) { cli.config }
+
+      before do
+        allow_any_instance_of(described_class).to receive(:info)
+        allow_any_instance_of(described_class).to receive(:boot)
+        allow_any_instance_of(described_class).to receive(:stop!)
+        allow_any_instance_of(described_class).to receive(:print)
+      end
 
       context 'when empty arguments' do
         it 'should print help' do
-          expect_any_instance_of(described_class).to receive(:print)
-          expect_any_instance_of(described_class).to receive(:stop!)
-          cli.initialize_cli_arguments!
+          cli.execute!
         end
       end
 
       context 'with empty sidekiq arguments' do
         let(:argv) { %w(-N 2 -q) }
 
-        its(:sidekiq_argv) { should_not be_nil }
-        its(:sidekiq_argv) { should be_empty }
+        its(:worker_argv) { should eq %w() }
+        its(:cluster_argv) { should eq %w(-N 2 -q)}
 
         context 'running it' do
-          before { expect(cli).to receive(:start_main_loop!) }
           it 'should print help' do
-            cli.run!
+            cli.execute!
           end
         end
       end
@@ -31,13 +36,12 @@ module Sidekiq
       context 'with non-empty sidekiq arguments' do
         let(:argv) { %w(-N 2 -q -- ) }
 
-        its(:sidekiq_argv) { should_not be_nil }
-        its(:sidekiq_argv) { should be_empty }
+        its(:worker_argv) { should_not be_nil }
+        its(:cluster_argv) { should_not be_nil }
 
         context 'running it' do
-          before { expect(cli).to receive(:start_main_loop!) }
           it 'should print help' do
-            cli.run!
+            cli.execute!
           end
         end
       end
@@ -46,14 +50,10 @@ module Sidekiq
         let(:argv) { %w(-N 2 -q -- -l log) }
 
         context 'running it' do
-          before do
-            expect(cli).to receive(:start_main_loop!)
-            cli.run!
-          end
+          before { cli.execute! }
 
-          its(:sidekiq_argv) { should_not be_empty }
-          its(:sidekiq_argv) { should eq %w(-l log) }
-
+          its(:worker_argv) { should eq %w(-l log)}
+          its(:cluster_argv) { should eq %w(-N 2 -q)}
         end
       end
     end
