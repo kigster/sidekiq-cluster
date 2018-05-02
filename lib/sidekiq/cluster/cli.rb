@@ -24,8 +24,15 @@ module Sidekiq
                     :logger
 
       def initialize(argv = ARGV.dup)
-        self.argv         = argv
-        self.sidekiq_argv = []
+        self.argv                    = argv
+        self.name                    = 'default'
+        self.pid_prefix              = '/tmp/sidekiq.pid'
+        self.sidekiq_argv            = []
+        self.log_device              = STDOUT
+        self.memory_percentage_limit = MAX_RAM_PCT
+        self.process_count           = Etc.nprocessors - 1
+        self.processes               = {}
+        self.pids                    = []
       end
 
       def per_process_memory_limit
@@ -39,7 +46,6 @@ module Sidekiq
       end
 
       def start_main_loop!
-        self.processes = {}
         start_children.each do |descriptor|
           processes[descriptor.pid] = descriptor
         end
@@ -47,7 +53,7 @@ module Sidekiq
         self.pids           = processes.keys
         self.watch_children = true
 
-        initiate_main_loop
+        main
         setup_signal_traps
 
         Process.waitall
@@ -68,11 +74,6 @@ module Sidekiq
         else
           split_argv! if argv.include?('--')
         end
-
-        self.log_device              = STDOUT
-        self.memory_percentage_limit = MAX_RAM_PCT
-        self.process_count           = Etc.nprocessors - 1
-
         init_logger!
         parse_args!
       end
@@ -102,7 +103,7 @@ module Sidekiq
         end
       end
 
-      def initiate_main_loop
+      def main
         Thread.new do
           info 'watching for outsized Sidekiq processes...'
           loop do
@@ -138,7 +139,7 @@ module Sidekiq
 
         Process.fork do
           process_argv = sidekiq_argv.dup << '-P' << pid_file(index)
-          process_argv << '--tag' << "sidekiq.#{name}"
+          process_argv << '--tag' << "sidekiq.#{name}.#{index + 1}"
           info "starting up sidekiq instance #{index} with ARGV: 'bundle exec sidekiq #{process_argv.join(' ')}'"
           begin
             cli = Sidekiq::CLI.instance
@@ -154,7 +155,7 @@ module Sidekiq
       end
 
       def pid_file(index)
-        "#{pid_prefix}.#{index}"
+        "#{pid_prefix}.#{index + 1}"
       end
 
       def start_children

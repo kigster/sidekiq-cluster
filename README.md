@@ -2,17 +2,36 @@
 
 ## Sidekiq Cluster
 
-This is a tiny gem that allows starting sidekiq using multiple processes. 
+This is a tiny gem that allows starting sidekiq using multiple processes. It is originally based on the wonderful [Honebadger Cluster Script](http://blog.honeybadger.io/introducing-our-sidekiq-cluster-script/). 
 
-It does not depend on any particular version of sidekiq, as long as the CLI class of Sidekiq remains named the same.
+Features:
+
+ * It does not depend on any particular version of sidekiq, as long as the CLI class of Sidekiq remains named the same.
+
+ * It does not attempt to replicate Sidekiq's command line options. Script itself can be controlled with its own CLI options preceeding the double dash `--`. Options to Sidekiq are expected after the double dash.
+ 
+ * You can specify **max number of processes** and **max total RAM used by this cluster** (expressed as a percentage of total). If one of the Sidekiq processes exceeeds it, it is automatically restarted. 
 
 ### Usage
 
-Install the gem:
+The easiest way to use Sidekiq Cluster is to add it to your Gemfile:
 
+```ruby
+gem 'sidekiq-cluster', require: false
 ```
-gem install sidekiq-cluster
+
+Run `bundle`, and then start Sidekiq cluster like so (this starts exactly two Sidekiq Processes):
+
+```bash
+# this starts sidekiq with default options
+$ bundle exec sidekiq-cluster -N 2
+
+# this starts sidekiq with custom options
+$ bundle exec sidekiq-cluster -N 2 -- -r $(pwd) -q default,10 -q high,100
 ```
+
+### Command Line Options
+
 
 Then try running it with `--help`:
 
