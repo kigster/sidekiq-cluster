@@ -240,7 +240,7 @@ module Sidekiq
                   'eg "/var/www/shared/config/sidekiq.pid"', ' ') do |v|
             self.pid_prefix = v
           end
-          opts.on('-l', '--logfile=FILE',
+          opts.on('-L', '--logfile=FILE',
                   'Logfile for the cluster script', ' ') do |v|
             self.log_device = v
             init_logger!

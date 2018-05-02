@@ -43,7 +43,7 @@ USAGE
 
 EXAMPLES
     $ cd rails_app
-    $ bundle exec sidekiq-cluster -N 2 -- -c 10 -q default,12 -l log/sidekiq.log
+    $ bundle exec sidekiq-cluster -N 2 -- -c 10 -q default,12 -L log/sidekiq.log
  
 SIDEKIQ CLUSTER OPTIONS
     -n, --name=NAME                  the name of this cluster, used when 
@@ -52,7 +52,7 @@ SIDEKIQ CLUSTER OPTIONS
     -P, --pidfile=FILE               Pidfile prefix, 
                                      eg "/var/www/shared/config/sidekiq.pid"
                                       
-    -l, --logfile=FILE               Logfile for the cluster script
+    -L, --logfile=FILE               Logfile for the cluster script
                                       
     -M, --max-memory=PERCENT         Maximum percent RAM that this
                                      cluster should not exceed. Defaults to 80%.
@@ -73,13 +73,13 @@ SIDEKIQ CLUSTER OPTIONS
 $ cd rails-app
 $ echo "gem 'sidekiq-cluster'" >> Gemfile
 $ bundle install
-$ bundle exec sidekiq-cluster \
-    -P /var/pids/sidekiq.pid \  # these are arguments to sidekiq-cluster
-    -n default \
-    -M 90 \
-    -L /var/log/sidekiq-cluster.log \
-    -N 2 \  
-    -- \                        # these are arguments for sidekiq.
+$ bundle exec sidekiq-cluster \        # these arguments are for sidekiq-cluster:
+    --pidfile /var/pids/sidekiq.pid \  
+    --name default \
+    --max-memory 90 \
+    --logfile /var/log/sidekiq-cluster.log \
+    --num-processes 2 \  
+    -- \                               # these arguments are for sidekiq:
     -L /var/log/sidekiq.log -c 10 -e production -q default,10 -q critical,20
 ```
 
