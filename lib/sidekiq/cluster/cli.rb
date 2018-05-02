@@ -24,19 +24,8 @@ module Sidekiq
                     :logger
 
       def initialize(argv = ARGV.dup)
-        self.argv = argv
-        if argv.nil? || argv.empty?
-          argv << '-h'
-        else
-          split_argv! if argv.include?('--')
-        end
-
-        self.log_device              = STDOUT
-        self.memory_percentage_limit = MAX_RAM_PCT
-        self.process_count           = Etc.nprocessors - 1
-
-        init_logger!
-        parse_args!
+        self.argv         = argv
+        self.sidekiq_argv = []
       end
 
       def per_process_memory_limit
@@ -44,15 +33,12 @@ module Sidekiq
       end
 
       def run!
-        # Limit each child process to a chunk of RAM based on how
-        # many processes we will run, with a bit of RAM left over for headroom.
-        # E.g., for four cores we'll run four child processes,
-        # so let each child use 20% of RAM instead of 25%.
+        initialize_cli_arguments!
+        print_header!
+        start_main_loop!
+      end
 
-        info "starting up sidekiq-cluster for #{name}"
-        info "NOTE: cluster max memory limit is #{memory_percentage_limit.round(2)}% of total"
-        info "NOTE: per sidekiq memory limit is #{per_process_memory_limit.round(2)}% of total"
-
+      def start_main_loop!
         self.processes = {}
         start_children.each do |descriptor|
           processes[descriptor.pid] = descriptor
@@ -68,7 +54,36 @@ module Sidekiq
         info 'shutting down...'
       end
 
+      def print(*args)
+        puts(*args)
+      end
+
+      def stop!(code = 0)
+        Kernel.exit(code)
+      end
+
+      def initialize_cli_arguments!
+        if argv.nil? || argv.empty?
+          argv << '-h'
+        else
+          split_argv! if argv.include?('--')
+        end
+
+        self.log_device              = STDOUT
+        self.memory_percentage_limit = MAX_RAM_PCT
+        self.process_count           = Etc.nprocessors - 1
+
+        init_logger!
+        parse_args!
+      end
+
       private
+
+      def print_header!
+        info "starting up sidekiq-cluster for #{name}"
+        info "NOTE: cluster max memory limit is #{memory_percentage_limit.round(2)}% of total"
+        info "NOTE: per sidekiq memory limit is #{per_process_memory_limit.round(2)}% of total"
+      end
 
       def init_logger!
         self.logger = ::Logger.new(log_device, level: ::Logger::INFO)
@@ -109,7 +124,7 @@ module Sidekiq
       end
 
       def handle_sig(sig)
-        puts "received OS signal #{sig}"
+        print "received OS signal #{sig}"
         # If we're shutting down, we don't need to re-spawn child processes that die
         @watch_children = false if sig == 'INT' || sig == 'TERM'
         @pids.each do |pid|
@@ -133,7 +148,7 @@ module Sidekiq
             raise e if $DEBUG
             error e.message
             error e.backtrace.join("\n")
-            exit 1
+            stop!(1)
           end
         end
       end
@@ -179,22 +194,33 @@ module Sidekiq
         @pids << fork_child
       end
 
+      def replace_pid(old_pid, new_pid)
+        if processes[old_pid]
+          pd       = processes[old_pid]
+          pid_file = pid_file(pd.index)
+
+          ::File.unlink(pid_file) if ::File.exist?(pidfile)
+          pids.delete(old_pid)
+          pd.pid = new_pid
+
+          processes.delete(pid)
+          processes[new_pid] = pd
+        end
+      end
+
       def restart_dead_child(pid)
         info "pid=#{pid} died, restarting..."
-        pid_file = pid_file(@processes[pid].index)
-        ::File.unlink(pid_file) if ::File.exist?(pidfile)
-        pd = processes[pid]
-        pids.delete(pid)
-        self.pids << new_pid = fork_child(pd.index)
-        pd.pid = new_pid
-        processes.delete(pid)
-        processes[new_pid] = pd
+
+        pd      = processes[pid]
+        new_pid = fork_child(pd.index)
+
+        replace_pid(pid, new_pid)
         info "replaced lost pid #{pid} with #{new_pid}"
       end
 
       def parse_args!
         options = {}
-        banner = "USAGE".bold.blue + "\n     sidekiq-cluster [options] -- [sidekiq-options]".bold.green
+        banner  = "USAGE".bold.blue + "\n     sidekiq-cluster [options] -- [sidekiq-options]".bold.green
         parser  = ::OptionParser.new(banner) do |opts|
           opts.separator ''
           opts.separator 'EXAMPLES'.bold.blue
@@ -238,12 +264,12 @@ module Sidekiq
             options[:debug] = true
           end
           opts.on('-h', '--help', 'this help') do |_v|
-            puts opts
-            exit 0
+            self.print opts
+            stop!
           end
         end
         parser.order!(argv)
-        puts("debug: #{self.inspect}") if options[:debug]
+        print("debug: #{self.inspect}") if options[:debug]
       end
     end
   end

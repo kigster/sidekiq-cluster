@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/kigster/sidekiq-cluster.svg?branch=master)](https://travis-ci.org/kigster/sidekiq-cluster)
+
 ## Sidekiq Cluster
 
 This is a tiny gem that allows starting sidekiq using multiple processes. 
@@ -16,21 +18,51 @@ Then try running it with `--help`:
 
 ```
 sidekiq-cluster -h
+
+USAGE
+     sidekiq-cluster [options] -- [sidekiq-options]
+
+EXAMPLES
+    $ cd rails_app
+    $ bundle exec sidekiq-cluster -N 2 -- -c 10 -q default,12 -l log/sidekiq.log
+ 
+SIDEKIQ CLUSTER OPTIONS
+    -n, --name=NAME                  the name of this cluster, used when 
+                                     when running multiple clusters
+                                      
+    -P, --pidfile=FILE               Pidfile prefix, 
+                                     eg "/var/www/shared/config/sidekiq.pid"
+                                      
+    -l, --logfile=FILE               Logfile for the cluster script
+                                      
+    -M, --max-memory=PERCENT         Maximum percent RAM that this
+                                     cluster should not exceed. Defaults to 80%.
+                                      
+    -N, --num-processes=NUM          Number of processes to start,
+                                     defaults to number of cores - 1
+                                      
+    -q, --quiet                      Do not log to STDOUT
+    -d, --debug                      Print debugging info before starting sidekiqs
+    -h, --help                       this help
+
+
 ```
 
 ## Examples
 
 ```bash
-    $ cd rails-app
-    $ bundle exec sidekiq-cluster \
-        -P /var/pids/sidekiq.pid \
-        -n default \
-        -M 90 \
-        -L /var/log/sidekiq-cluster.log \
-        -N 2 \
-        -- -L /var/log/sidekiq.log -c 10 -e production -q default,10 -q critical,20
+$ cd rails-app
+$ echo "gem 'sidekiq-cluster'" >> Gemfile
+$ bundle install
+$ bundle exec sidekiq-cluster \
+    -P /var/pids/sidekiq.pid \  # these are arguments to sidekiq-cluster
+    -n default \
+    -M 90 \
+    -L /var/log/sidekiq-cluster.log \
+    -N 2 \  
+    -- \                        # these are arguments for sidekiq.
+    -L /var/log/sidekiq.log -c 10 -e production -q default,10 -q critical,20
 ```
-
 
 ## Contributing to sidekiq-cluster
  

@@ -1,4 +1,6 @@
 require 'simplecov'
+require 'rspec'
+require 'rspec/its'
 
 module SimpleCov::Configuration
   def clean_filters
