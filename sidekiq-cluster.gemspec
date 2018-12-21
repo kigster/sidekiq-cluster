@@ -1,8 +1,5 @@
 # coding: utf-8
-
-lib = File.expand_path('../lib', __FILE__)
-$LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
-require 'sidekiq/cluster/version'
+require_relative 'lib/sidekiq/cluster/version'
 
 Gem::Specification.new do |spec|
   spec.name          = 'sidekiq-cluster'
