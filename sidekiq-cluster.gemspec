@@ -1,14 +1,13 @@
 # coding: utf-8
-require_relative 'lib/sidekiq/cluster/version'
 
 Gem::Specification.new do |spec|
   spec.name          = 'sidekiq-cluster'
-  spec.version       = Sidekiq::Cluster::VERSION
+  spec.version       = '0.1.2'
   spec.authors       = ['Konstantin Gredeskoul']
   spec.email         = ['kigster@gmail.com']
 
-  spec.summary       = Sidekiq::Cluster::DESCRIPTION
-  spec.description   = Sidekiq::Cluster::DESCRIPTION
+  spec.summary       = 'Foo Bar'
+  spec.description   = 'Foo Bar'
   spec.homepage      = 'https://github.com/kigster/sidekiq-cluster'
   spec.license       = 'MIT'
 
