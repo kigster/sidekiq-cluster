@@ -64,7 +64,7 @@ module Sidekiq
 
       def memory_used_percent
         mem = memory_used_pct
-        mem < 0 ? 'DEAD' : sprintf('%.2f%', mem)
+        mem < 0 ? 'DEAD' : sprintf('%.2f%%', mem)
       end
 
       def check_worker
