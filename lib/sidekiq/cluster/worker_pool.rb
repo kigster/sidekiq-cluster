@@ -96,7 +96,7 @@ module Sidekiq
       end
 
       def setup_signal_traps
-        %w(INT USR1 TERM).each do |sig|
+        %w(INT TSTP TTIN TERM).each do |sig|
           Signal.trap(sig) do
             handle_signal(sig)
             stop! if @signal_received
