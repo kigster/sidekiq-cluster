@@ -99,6 +99,8 @@ module Sidekiq
         %w(INT USR1 TERM).each do |sig|
           Signal.trap(sig) do
             handle_signal(sig)
+            stop! if @signal_received
+            shutdown! if stopping?
           end
         end
       end
