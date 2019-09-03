@@ -5,6 +5,8 @@
 
 
 [![Build Status](https://travis-ci.org/kigster/sidekiq-cluster.svg?branch=master)](https://travis-ci.org/kigster/sidekiq-cluster)
+[![Maintainability](https://api.codeclimate.com/v1/badges/c565c4357b9c525bd2c1/maintainability)](https://codeclimate.com/github/kigster/sidekiq-pool/maintainability)
+[![Test Coverage](https://api.codeclimate.com/v1/badges/c565c4357b9c525bd2c1/test_coverage)](https://codeclimate.com/github/kigster/sidekiq-pool/test_coverage)
 
 ## Sidekiq Cluster
 

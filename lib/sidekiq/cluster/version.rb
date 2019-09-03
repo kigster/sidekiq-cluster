@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require 'colored2'
-
 module Sidekiq
   module Cluster
     VERSION ||= '0.1.2'
@@ -19,17 +17,17 @@ module Sidekiq
     MAX_RAM_PCT ||= 80.freeze
 
     # @formatter:off
-      BANNER ||= %Q(
-#{'EXAMPLES'.bold.yellow}
+    BANNER ||= %Q(
+EXAMPLES
 
     $ cd rails_app
     $ echo 'gem "sidekiq-cluster"' >> Gemfile
     $ bundle install
-    #{'$ bundle exec sidekiq-cluster -N 2 '.bold.magenta + '--' + ' -c 10 -q default,12 -L log/sidekiq.log'.bold.cyan}
+    $ bundle exec sidekiq-cluster -N 2 -- -c 10 -q default,12 -L log/sidekiq.log
 
-#{'OPTIONS'.bold.yellow}
+OPTIONS
 ).freeze
-      # @formatter:on
+    # @formatter:on
   end
 end
 
