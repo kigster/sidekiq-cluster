@@ -1,3 +1,9 @@
+<h1>WARNING: this GEM is not fully finished.</h1>
+
+
+**Please use [sidekiq-pool](https://github.com/vinted/sidekiq-pool) instead.**
+
+
 [![Build Status](https://travis-ci.org/kigster/sidekiq-cluster.svg?branch=master)](https://travis-ci.org/kigster/sidekiq-cluster)
 
 ## Sidekiq Cluster
